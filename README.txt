@@ -1,10 +1,10 @@
 MIREX 2007 SYMBOLIC MELODIC SIMILARITY SUBMISSION
 
-Authors: Carlos Gómez, Edna Ruckhaus, Soraya Abad-Mota
-Universidad Simón Bolívar
+Authors: Carlos GÃ³mez, Edna Ruckhaus, Soraya Abad-Mota
+Universidad SimÃ³n BolÃ­var
 Venezuela
 
-Contact: Carlos Gómez (cgomez@ldc.usb.ve, armarpc@gmail.com)
+Contact: Carlos GÃ³mez (armarpc at gmail dot com)
 
 0. REQUISITES
 

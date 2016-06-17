@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# If needed, you can indicate here the database connection parameters, 
+# such as the name of the database, the username, a password (generally
+# not needed) and the hostname of the machine where the database server 
+# is running.
+database=carlos
+user=carlos
+password=
+host=
+
+k1=0.46
+k2=0.22
+k3=1.00
+f=4
+
+if [ $# -ne 3 ]; then
+    echo "Usage: note_matcher <format> <queries directory> <output_file>"
+    echo 
+    echo "Where <format> is either 'note' or 'midi', and indicates "
+    echo '        whether the queries are .note files or MIDI files,'
+    echo '        respectively.'
+    echo '      <queries directory> is a directory containing the '
+    echo "        queries. It doesn't matter if the directory"
+    echo '        contains other files, only the files with the'
+    echo '        corresponding extension will be read.'
+    echo '      <output_file> is where the results will be written.'
+    echo
+    exit 0
+fi
+
+if [[ $1 == 'note' ]]; then
+    extension='note'
+elif [[ $1 == 'midi' ]]; then
+    extension='mid'
+else
+    echo "Please indicate either 'note' or 'midi' as the first argument."
+    echo
+    exit 0
+fi
+
+db_options=
+if [[ ${database} != '' ]]; then
+    db_options="-database ${database} "
+fi
+if [[ ${user} != '' ]]; then
+    db_options=${db_options}"-user ${user} "
+fi
+if [[ ${password} != '' ]]; then
+    db_options=${db_options}"-password ${password} "
+fi
+if [[ ${host} != '' ]]; then
+    db_options=${db_options}"-host ${host} "
+fi
+
+
+echo -n > $3 # clear the output file as we'll append to it
+touch temp_output
+for query in $2/*.${extension}; do
+    echo Answering query $query
+    echo -n "`basename ${query}`: " >> $3
+    if [[ ${extension} == 'note' ]]; then
+        textquery=`./notetxt ${query}`
+    else
+        textquery=`./miditxt ${query}`
+    fi  
+    ./query -k1 ${k1} -k2 ${k2} -k3 ${k3} -f $f -align alltosome -n 20 -qbsh -output temp_output ${db_options} "${textquery}"
+    cat temp_output >> $3
+done
+
+rm temp_output
+sed 's/\.note//g' "$3" > "$3_temp"
+sed 's/\.mid//g' "$3_temp" > "$3"
+rm "$3_temp"

@@ -1,0 +1,44 @@
+ver en el articulo 'Transposition invariant string matching' la cota de las transpociciones.
+probar representacion mod 12 (tomando la menor distancia en wInterval)
+probar sin inserciones y eliminaciones
+./query "`miditxt ~/bd/mirex2005/700.007.707-1.1.1.mid`" "`miditxt ~/bd/mirex2005/000.121.579-1.1.1.mid`"
+en MS, al transponer la consulta hay que sacar el modulo 12 de la altura de la nota
+en MS, por que el ADR no cambia casi si se cambia la escala de las duraciones?
+en MS, hay algún problema con el template de Matrix?
+hacer que query de un error si se especifica una opcion despues de la segunda melodia
+hacer q la representacion binaria en postgres sea independiente del byte order
+
+caso de prueba:
+-----------------
+carlos@eowyn ~/ms $ query -a jcs "#do^480 si240 la240 si480 mi^480 #do^480 si240 la240 si960" "mi480 do480 re480 sol480 mi480 do480 re960" 
+
+
+
+path: 
+
+4.25899e-36
+carlos@eowyn ~/ms $ query -a jcs "mi480 do240 do240 re480 sol480 mi480 do240 do240 re960" "#do^480 si240 la240 si480 mi^480 #do^480 si240 la240 si960"
+
+
+
+path: 
+
+3.06589e-12
+------------------
+
+casos lentos:
+
+450.032.447-1.1.1.mid 451.504.065-1.1.1.mid
+
+./query -a jcs -sigmainits 200 "mi480 re240 do240 re480 sol480 mi480 re240 do240 re960" "mi960 re480 do480 re960 sol960 mi960 do960 re1920"
+./query -a jcs -sigmainits 200 "mi960 re480 do480 re960 sol960 mi960 do960 re1920" "mi480 re240 do240 re480 sol480 mi480 re240 do240 re960"
+./query -a jcs -sigmainits 200 "mi480 re240 do240 re480 sol480 mi480 do480 re960" "mi960 re480 do480 re960 sol960 mi960 re480 do480 re1920"
+./query -a jcs -sigmainits 200 "mi960 re480 do480 re960 sol960 mi960 re480 do480 re1920" "mi480 re240 do240 re480 sol480 mi480 do480 re960"
+
+./query -a jcs -sigmainits 200 "mi480 re240 do240 re480 sol480 mi480 re240 do240 re960" "mi960 re480 do480 re960 sol960 mi960 do960 re1920"
+./query -a jcs -sigmainits 200 "mi480 re240 do240 re480 sol480 mi480 do480 re960" "mi960 re480 do480 re960 sol960 mi960 re480 do480 re1920"
+
+./query -a jcs -pjoin 0.025 "re240 do240" "do960"
+./query -a jcs -pjoin 0.025 "re480 do480" "do480"
+./query -a jcs -pjoin 0.025 "do960" "re240 do240"
+./query -a jcs -pjoin 0.025 "do480" "re480 do480"

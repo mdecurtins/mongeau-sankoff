@@ -1,0 +1,31 @@
+CFLAGS = -Wall -O2
+INCDIRS = -I@postgres-includedir-server@
+
+all: probar secuencia.so libparsemusic.so
+
+probar: probar.o
+	gcc ${CFLAGS} probar.o -o probar
+
+probar.o: probar.c funcion_secuencia.h funcion_secuencia.c
+	gcc ${CFLAGS} ${INCDIRS} -c probar.c
+
+libparsemusic.so: parsemusic.o
+	gcc ${CFLAGS} -shared parsemusic.o -o libparsemusic.so
+
+secuencia.so: secuencia.o
+	gcc ${CFLAGS} -shared secuencia.o -o secuencia.so
+
+musicseqmodule.so: musicseqmodule.o
+	gcc ${CFLAGS} -shared musicseqmodule.o -o musicseqmodule.so
+
+parsemusic.o: parsemusic.c parsemusic.h funcion_secuencia.h funcion_secuencia.c
+	gcc ${CFLAGS} ${INCDIRS} -fpic -c parsemusic.c
+
+secuencia.o: secuencia.c funcion_secuencia.h funcion_secuencia.c
+	gcc ${CFLAGS} ${INCDIRS} -fpic -c secuencia.c
+
+musicseqmodule.o: musicseqmodule.c funcion_secuencia.h funcion_secuencia.c
+	gcc ${CFLAGS} ${INCDIRS} -fpic -I/usr/include/python2.4 -c musicseqmodule.c
+
+clean:
+	rm *.o secuencia.so musicseqmodule.so libparsemusic.so probar

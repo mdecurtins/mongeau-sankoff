@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# If needed, you can indicate here the database connection parameters, 
+# such as the name of the database, the username, a password (generally
+# not needed) and the hostname of the machine where the database server 
+# is running.
+database=carlos
+user=carlos
+password=
+host=
+
+k1=0.36
+k2=0.24
+
+if [ $# -ne 2 ]; then
+    echo 'Usage: ms_original <query> <output_file>'
+    echo 
+    echo 'Where <query> is the name of a MIDI file representing the query'
+    echo '      <output_file> is where the results will be written'
+    echo
+    exit 0
+fi
+
+db_options=
+if [[ ${database} != '' ]]; then
+    db_options="-database ${database} "
+fi
+if [[ ${user} != '' ]]; then
+    db_options=${db_options}"-user ${user} "
+fi
+if [[ ${password} != '' ]]; then
+    db_options=${db_options}"-password ${password} "
+fi
+if [[ ${host} != '' ]]; then
+    db_options=${db_options}"-host ${host} "
+fi
+
+textquery=`./miditxt $1`
+./query -k1 $k1 -k2 $k2 -align local -mirex -output $2 ${db_options} "${textquery}"

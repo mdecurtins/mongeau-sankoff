@@ -1,0 +1,37 @@
+#!/bin/bash
+# This is a very simple configure script that figures
+# the path of your PostgreSQL includes and libraries.
+
+# If pg_config isn't in your PATH, modify the variable below 
+# to indicate the full path to pg_config. For example:
+# PG_CONFIG=/home/someone/pgsql/bin/pg_config
+PG_CONFIG=pg_config
+
+which $PG_CONFIG &> /dev/null
+if [[ $? -eq 0 ]]
+then
+    POSTGRES_INCLUDEDIR=`pg_config --includedir`
+    POSTGRES_INCLUDEDIRSERVER=`pg_config --includedir-server`
+    POSTGRES_LIBDIR=`pg_config --libdir`
+    POSTGRES_PKGLIBDIR=`pg_config --pkglibdir`
+else
+    echo
+    echo pg_config is not in your PATH. Please edit the configure script
+    echo to indicate the path to pg_config.
+    exit 1
+fi
+
+sed "{s+@postgres-includedir@+$POSTGRES_INCLUDEDIR+}" Makefile.in | \
+sed "{s+@postgres-libdir@+$POSTGRES_LIBDIR+}" > Makefile
+
+sed "{s+@postgres-includedir-server@+$POSTGRES_INCLUDEDIRSERVER+}" \
+secuencia/Makefile.in > secuencia/Makefile
+
+echo
+echo "    POSTGRES_INCLUDEDIR = $POSTGRES_INCLUDEDIR"
+echo "    POSTGRES_INCLUDEDIRSERVER = $POSTGRES_INCLUDEDIRSERVER"
+echo "    POSTGRES_LIBDIR = $POSTGRES_LIBDIR"
+echo
+echo "    POSTGRES_PKGLIBDIR = $POSTGRES_PKGLIBDIR"
+echo
+echo "Configure finished. Run 'make' now."

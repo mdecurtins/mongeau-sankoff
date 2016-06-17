@@ -1,0 +1,440 @@
+/* JCS.cpp
+ * 
+ * Copyright (C) 2006 Carlos Gómez
+ * Universidad Simón Bolívar
+ */
+
+#include "JCS.h"
+
+#include <iostream>
+#include <ext/slist>
+#include <math.h>
+
+using namespace std;
+using namespace Sgi;
+
+float JCS::edit_probabilities[3] = {0.95, 0.03, 0.02};
+
+/* Calculates the probability that a query matches a given
+ * document, using the JCS model. 
+ * q  query
+ * d  target document
+ */
+Result JCS::compare(const Sequence& q, const Sequence& d) {
+    int m, n;
+    m = q.length();
+    n = d.length();
+    if ((m == 0) || (n == 0)) {
+        throw NullLengthSequence();
+    }
+    if (m > 255) {
+        warning("the query has more than 255 notes, so it won't be compared");
+        return Result(0, slist<char>(), 0, 0);
+    }
+    if (n > 255) {
+        warning("the document has more than 255 notes, so it won't be compared");
+        return Result(0, slist<char>(), 0, 0);
+    }
+    if (verb(2)) cout << "quantized query: " << q.print() << "\n";
+    if (verb(2)) cout << "quantized document: " << d.print() << "\n";
+    nStates = n * 3 * (L - 1) * L * nTrans * nScal + 1; // + 1 because of the end state
+    if (verb(2)) cout << "number of states: " << nStates << "\n";
+    delete[] states;
+    states = new State[nStates];
+    enumerateStates(n);
+    for (int i = -11; i <= 11; i++) {
+        transp_probabilities[i + 11] = errorP(i, sigmaTransp);
+    }
+    for (int i = -8; i <= 8; i++) {
+        scaling_probabilities[i + 8] = errorP(i, sigmaScaling);
+        init_scaling_probabilities[i + 8] = errorP(i, sigmaInitScaling);
+    }
+    for (int i = -17; i <= 16; i++) {
+        pitch_error_probabilities[i + 17] = errorP(i, sigmaPitch);
+    }
+    for (int i = -32; i <= 33; i++) {
+        rhythm_error_probabilities[i + 32] = errorP(i, sigmaRhythm);
+    }
+    normalize(transp_probabilities, 23);
+    normalize(scaling_probabilities, 17);
+    normalize(init_scaling_probabilities, 17);
+    normalize(pitch_error_probabilities, 34);
+    normalize(rhythm_error_probabilities, 66);
+    if (verb(2)) cout << "Transposition probabilities:\n";
+    if (verb(2)) printArray(transp_probabilities, 23);
+    if (verb(2)) cout << "Scaling probabilities:\n";
+    if (verb(2)) printArray(scaling_probabilities, 17);
+    if (verb(2)) cout << "Initial scaling probabilities:\n";
+    if (verb(2)) printArray(init_scaling_probabilities, 17);
+    if (verb(2)) cout << "Pitch error probabilities:\n";
+    if (verb(2)) printArray(pitch_error_probabilities, 34);
+    if (verb(2)) cout << "Rhythm error probabilities:\n";
+    if (verb(2)) printArray(rhythm_error_probabilities, 66);
+    float p = forward(q, d, m, n);
+    return Result(p, slist<char>(), 0, 0);
+}
+
+void JCS::enumerateStates(int n) {
+    for (int i = 0; i < n; i++) {
+        for (int edit_type = 0; edit_type < 3; edit_type++) {
+            for (int edit_len = 2; edit_len <= L; edit_len++) {
+                for (int k = -5; k <= 6; k++) {
+                    for (int s = -4; s <= 4; s++) {
+                        if (edit_type == ELAB) {
+                            for (int edit_pos = 0; edit_pos < edit_len; edit_pos++) {
+                                State state(k, s, i, edit_type, edit_len, edit_pos);
+                                states[stateToi(state)] = state;
+                            }
+                        } else {
+                            State state(k, s, i, edit_type, edit_len, 0);
+                            states[stateToi(state)] = state;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    end_state = State(6, 5, n - 1, 2, 2, 1); // s = 5 indicates the end state
+    assert(stateToi(end_state) == nStates - 1);
+    states[stateToi(end_state)] = end_state;
+}
+
+float JCS::forward(const Sequence& query, const Sequence& doc, int m, int n)
+{
+    typedef vector<int>::iterator Iterator;
+    Matrix<float> alpha(nStates, m, -1);
+    delete q;
+    delete next_q;
+    q = new vector<int>();
+    next_q = new vector<int>();
+    q->reserve(APROX_N_STATES);
+    next_q->reserve(APROX_N_STATES);
+
+    // initialization
+    //if (verb(3)) cout << "initial\tobservation\n";
+    for (int edit_type = 0; edit_type < 3; edit_type++) {
+        for (int k = -5; k <= 6; k++) {
+            for (int s = -4; s <= 4; s++) {
+                State s_ini(k, s, 0, edit_type, 2, 0);
+                int pos = stateToi(s_ini);
+                //cout << pos;
+                //cout.flush();
+                q->push_back(pos);
+                if (verb(3)) cout << "pos = " << pos << "\n";
+                alpha(pos, 0) = initial(edit_type, s) * 
+                    observation(s_ini, 0, query, doc, m, n);
+                //alpha(pos, 0) = (float)0.1;
+                //cout << pos << "\n";
+                //cout << "value=" << (float)alpha(pos, 0) << "\n";
+                //cout.flush();
+                //assert((float)alpha(pos, 0) == (float)0.1);
+                //if (verb(3)) cout << initial(edit_type, s) << "\t" << 
+                //                 observation(s_ini, 0, query, doc, m, n) << "\n";
+                //if (verb(3)) cout << (initial(edit_type, s) *
+                //                 observation(s_ini, 0, query, doc, m, n)) << "\n";
+            }
+        }
+        //if (verb(2)) cout << alpha.print() << "\n\n";
+    }
+
+    if (verb(3)) cout << alpha.print() << "\n\n";
+
+    // induction
+    for (int t = 0; t < m - 1; t++) {
+        for (Iterator iter = q->begin(); iter != q->end(); iter++) {
+            int pos = *iter;
+            State state = states[pos];
+            assert(alpha(pos, t) >= 0);
+            if (alpha(pos, t) == 0) {
+                //cout << "a" << pos << "\n";
+                // discard past-the-end join states
+                continue;
+            }
+            if (isEndState(state)) {
+                //cout << "b" << pos << "\n";
+                assert(false);
+            } else if ((state.editType() == ELAB) && (state.editPos() < state.editLength() - 1)) {
+                //cout << "c" << pos << "\n";
+                state.incEditPos();
+                int pos1 = stateToi(state);
+                if (alpha(pos1, t + 1) == -1) {
+                    next_q->push_back(pos1);
+                    alpha(pos1, t + 1) = alpha(pos, t);
+                } else {
+                    assert(false);
+                }
+            } else {
+                // general case
+                //cout << "d" << pos << "\n";
+                int i = state.e_i + 1;
+                if (state.editType() == JOIN) {
+                    i += state.editLength() - 1;
+                }
+                assert(i <= n);
+                if (i == n) {
+                    // the only succesor is the end state
+                    int pos1 = stateToi(end_state);
+                    assert(pos1 == nStates - 1);
+                    if (alpha(pos1, t + 1) == -1) {
+                        next_q->push_back(pos1);
+                        alpha(pos1, t + 1) = alpha(pos, t);
+                    } else {
+                        alpha(pos1, t + 1) += alpha(pos, t);
+                    }
+                } else {
+                    //cout << "e" << pos << "\n";
+                    //cout << "alpha(t)=" << alpha(pos, t) << "\n";
+                    int kp = state.k; // previous k
+                    int sp = state.s;
+                    for (int edit_type = 0; edit_type < 3; edit_type++) {
+                        for (int k = max(kp - 5, -5); k <= min(kp + 6, 6); k++) {
+                            for (int s = max(sp - 4, -4); s <= min(sp + 4, 4); s++) {
+                                State suc(k, s, i, edit_type, 2, 0);
+                                int pos1 = stateToi(suc);
+                                int delta_k = k - kp;
+                                int delta_s = s - sp;
+                                if (alpha(pos1, t + 1) == -1) {
+                                    //cout << "trans=" << transition(edit_type, k, s) << "\n";
+                                    next_q->push_back(pos1);
+                                    alpha(pos1, t + 1) = alpha(pos, t) * 
+                                        transition(edit_type, delta_k, delta_s);
+                                    //cout << "pos2" << pos << "\n";
+                                    //cout << "alp" << alpha(pos, t) << "\n";
+                                    //cout << "t" << transition(edit_type, k, s) << "\n";
+                                    //alpha(pos, t + 1) = 0.1;
+                                    //assert(alpha(pos, t) == (float)0);
+                                    //assert(alpha(pos, t) == 0 || transition(edit_type, k, s) == 0);
+                                } else {
+                                    //assert(alpha(pos, t) == 0 || transition(edit_type, k, s) == 0);
+                                    alpha(pos1, t + 1) += alpha(pos, t) * 
+                                        transition(edit_type, delta_k, delta_s);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (verb(3)) cout << alpha.print() << "\n\n";
+        for (Iterator iter = next_q->begin(); iter != next_q->end(); iter++) {
+            int pos = *iter;
+            State state = states[pos];
+            alpha(pos, t + 1) *= observation(state, t + 1, query, doc, m, n);
+        }
+        swapq();
+    }
+
+    // termination
+    float sum = 0;
+    for (Iterator iter = q->begin(); iter != q->end(); iter++) {
+        sum += alpha(*iter, m - 1);
+    }
+    return sum;
+}
+
+inline float JCS::initial(int edit_type, int s) {
+    float p = 1/(float)12;
+    return edit_probabilities[edit_type] * p * 
+        init_scaling_probabilities[s + 8];
+}
+
+inline float JCS::transition(int edit_type, int delta_k, int delta_s) {
+    assert((delta_k >= -5) && (delta_k <= 6));
+    assert((delta_s >= -4) && (delta_s <= 4));
+    return edit_probabilities[edit_type] * transp_probabilities[delta_k + 11] *
+        scaling_probabilities[delta_s + 8];
+}
+
+float JCS::observation(const State state, int t, const Sequence& query,
+                       const Sequence& doc, int m, int n) {
+    if (isEndState(state)) {
+        assert(t == m);
+        return 1;
+    }
+    int edit_type = state.editType();
+    int k = state.k;
+    int s = state.s;
+    int i = state.e_i;
+    int pos = state.editPos();
+    int delta_ioi;
+    float pitch_error_p;
+    if (edit_type == SAME) {
+        int delta_pitch = query(t + 1).pitch - rmod(doc(i + 1).pitch + k, 12);
+        //cout << query(t + 1).pitch << " " << doc(i + 1).pitch << " " << k << "\n";cout.flush();
+        delta_ioi = query(t + 1).duration - doc(i + 1).duration - s;
+        pitch_error_p = PErrorProb(delta_pitch);
+    } else if (edit_type == JOIN) {
+        int l = state.editLength();
+        if (i + l > n) { // (i + l - 1 > n - 1)
+            return 0;
+        }
+        pitch_error_p = 1;
+        for (int j = i; j < i + l; j++) {
+            //cout << query(t + 1).pitch << " " << doc(j + 1).pitch << " " << k << "\n";cout.flush();
+            pitch_error_p *= 
+                PErrorProb(query(t + 1).pitch - rmod(doc(j + 1).pitch + k, 12));
+        }
+        int sum = 0;
+        for (int j = i; j < i + l; j++) {
+            sum += doc(j + 1).duration;
+        }
+        delta_ioi = query(t + 1).duration - sum - s;
+    } else if ((edit_type == ELAB) && (pos == 0)) {
+        int l = state.editLength();
+        if (t + l > m) {
+            return 0;
+        }
+        pitch_error_p = 1;
+        for (int j = t; j < t + l; j++) {
+            //cout << doc(i + 1).pitch << " " << query(j + 1).pitch << " " << k << "\n";cout.flush();
+            pitch_error_p *= 
+                PErrorProb(doc(i + 1).pitch - rmod(query(j + 1).pitch + k, 12));
+        }
+        int sum = 0;
+        for (int j = t; j < t + l; j++) {
+            sum += query(j + 1).duration;
+        }
+        delta_ioi = doc(i + 1).duration - sum - s;
+    } else { // if ((edit_type == ELAB) && (pos != 0))
+        return 1;
+    }
+    return pitch_error_p * RErrorProb(delta_ioi);
+}
+
+inline float JCS::PErrorProb(int delta) {
+    assert((delta >= -11) && (delta <= 11));      // TODO
+    return pitch_error_probabilities[delta + 17]; //
+}
+
+inline float JCS::RErrorProb(int delta) {
+    if ((delta >= -32) && (delta <= 32)) {
+        return rhythm_error_probabilities[delta + 32];
+    } else {
+        return rhythm_error_probabilities[65];
+    }
+}
+
+void JCS::normalize(float *probabilities, int n) {
+    float sum = 0;
+    for (int i = 0; i < n; i++) {
+        sum += probabilities[i];
+    }
+    for (int i = 0; i < n; i++) {
+        probabilities[i] /= sum;
+    }
+}
+
+/* Converts a state to a 6-dimensional integer representation, where
+ * the dimensions are (in this order): i, edit type, (l or m), j, K and S.
+ */
+inline int JCS::stateToi(const State s) const {
+    //return A * s.e_i + B * s.editType() + C * s.editLength() + D * s.editPos()
+    //    + E * (s.k + 5) + s.s + 4;
+    return A * s.e_i + B * s.editType() + D * s.editPos()
+        + E * (s.k + 5) + s.s + 4;
+}
+
+inline bool JCS::isEndState(const State state) {
+    return state.s == 5;
+}
+
+inline void JCS::swapq() {
+    delete q;
+    q = next_q;
+    next_q = new vector<int>();
+    next_q->reserve(APROX_N_STATES);
+}
+
+inline int JCS::min(int a, int b) {
+    if (b < a)
+        return b;
+    else
+        return a;
+}
+
+inline int JCS::max(int a, int b) {
+    if (b > a)
+        return b;
+    else
+        return a;
+}
+
+// pre: b > 0
+inline int JCS::rmod(int a, int b) {
+    int m = iabs(a) % b;
+    if ((a < 0) && (m != 0)) {
+        return b - m;
+    } else {
+        return m;
+    }
+}
+
+inline int JCS::iabs(int a) {
+    if (a < 0)
+        return -a;
+    else
+        return a;
+}
+
+/* 
+ * Adapted from the GNU Scientific Library.
+ * Copyright (C) 1996-2000 James Theiler, Brian Gough
+ */
+/*
+float JCS::gaussian_pdf(const float x, const float sigma) {
+  float u = x / fabsf(sigma);
+  float p = (1 / (sqrtf(2 * M_PI) * fabsf(sigma))) * expf(-u * u / 2);
+  return p;
+}
+*/
+
+//f(x) = 1/(sqrt(2 pi) sigma) e^-((x - mu)^2/(2 sigma^2))
+
+/*
+float JCS::gaussian_pdf(const float x, const float sigma) {
+    assert(sigma > 0);
+    float p = 1 / (sqrt(2 * M_PI) * sigma) * exp(-(x * x / (2 * sigma * sigma)));
+    return p;
+}
+*/
+
+float JCS::gaussianP(const float x1, const float x2, const float sigma) {
+    return gsl_cdf_gaussian_P(x2, sigma) - gsl_cdf_gaussian_P(x1, sigma);
+}
+
+float JCS::errorP(const float x, const float sigma) {
+    return gaussianP(x - 0.5, x + 0.5, sigma);
+}
+
+void JCS::printArray(float *array, int n) {
+    int p = cout.precision();
+    cout.precision(3);
+    for (int i = 0; i < n - 1; i++) {
+        cout.width(11);
+        cout << right << array[i] << ",";
+    }
+    cout.width(11);
+    cout << right << array[n - 1];
+    cout.precision(p);
+    cout << "\n";
+}
+
+JCS::~JCS() {
+    delete[] states;
+    delete q;
+    delete next_q;
+}
+
+/*
+bool JCS::belongs(vector<int>* q, int a) {
+    typedef vector<int>::iterator Iterator;
+    for (Iterator iter = q->begin(); iter != q->end(); iter++) {
+        if (a == *iter) {
+            cout << (*iter) << "\n";
+            return true;
+        }
+    }
+    //cout << "\n\n";
+    return false;
+}
+*/

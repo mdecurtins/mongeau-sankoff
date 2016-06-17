@@ -1,0 +1,20 @@
+#!/bin/bash
+echo Running a test query...
+./ms_original ./Q0050.mid test_output
+diff test_output - <<EOF
+Q0050.mid
+Q1050E.mid
+D0016.mid
+D0022.mid
+Z0082.mid
+E0192.mid
+Q0055Q.mid
+Q0150B.mid
+Z0291.mid
+Q0020J.mid
+EOF
+if [[ $? -eq 0 ]]; then
+    echo Test ok
+else
+    echo Test failed
+fi
